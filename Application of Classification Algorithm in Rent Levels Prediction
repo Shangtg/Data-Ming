@@ -1,0 +1,761 @@
+# -*- coding: utf-8 -*-
+
+  
+          
+from sklearn.cross_validation import train_test_split
+from sklearn.preprocessing import scale
+from sklearn import metrics
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime 
+from collections import Counter
+import random
+import matplotlib 
+matplotlib.rcParams['font.sans-serif'] = ['SimHei']
+matplotlib.rcParams['font.family']='sans-serif' #解决负号'-'显示为方块的问题
+matplotlib.rcParams['axes.unicode_minus'] = False
+import os
+os.chdir(r'C:\Users\tree\Desktop\python组合分类模型\现在的')
+
+
+
+# 数据读取
+data = pd.read_csv('miete.csv')
+# 数据预览
+
+data.head()
+
+# 数据处理
+def datacleaned():
+    # 去掉重复字段  避免多重共线性
+    newdata = data.drop(['nm','bj','wflkat'],axis = 1)
+
+    return(newdata)
+
+
+if __name__ == "__main__":
+    newdata = datacleaned()
+
+### 数据相关性
+
+import seaborn as sns
+def cor_plot(newdata):
+    dfData = newdata.corr()
+    plt.subplots(figsize=(11, 11)) # 设置画面大小
+    sns.heatmap(dfData, annot=True, vmax=1, square=True)
+    plt.xticks(rotation = 45) 
+    plt.yticks(rotation = 45)    
+    plt.savefig('相关系数图.png',dpi=150)
+    plt.show()
+
+if __name__ == "__main__":
+    cor_plot(newdata)
+
+#数据可视化初步维度分析
+#1. 数据初步分析
+def get_dimensionPlot():
+    
+    fig = plt.figure(figsize=(10,6))
+    fig.set(alpha=0.2)  # 设定图表颜色alpha参数
+    # 房价类别情况人数分布
+    plt.subplot2grid((2,3),(0,0))             # 在一张大图里分列几个小图
+    newdata.nmkat.value_counts().sort_index().plot(kind='barh')# 柱状图 
+    x=range(len(newdata.nmkat.value_counts().sort_index().index))
+    y=list(newdata.nmkat.value_counts().sort_index().values)
+    for a,b in zip(x,y):
+        plt.text(b+2,a, b, ha='center', va= 'bottom',fontsize=10)    
+    plt.grid(b=True, which='major', axis='x') 
+    plt.title(u"房价类别(1为高房价)") # 标题
+    plt.xlabel(u"交易数")  
+    # 是否有浴室分布
+    plt.subplot2grid((2,3),(0,1))
+    newdata.bad0.value_counts().sort_index().plot(kind="bar")
+    x=range(len(newdata.bad0.value_counts().sort_index().index))
+    y=list(newdata.bad0.value_counts().sort_index().values)
+    for a,b in zip(x,y):
+        plt.text(a,b+2, b, ha='center', va= 'bottom',fontsize=10) 
+    plt.grid(b=True, which='major', axis='y') 
+    plt.ylabel(u"交易数")
+    plt.title(u"是否有浴室(1为无浴室)")
+    # 是否含中央供暖
+    plt.subplot2grid((2,3),(0,2))
+    newdata.zh.value_counts().sort_index().plot(kind="bar")
+    x=range(len(newdata.zh.value_counts().sort_index().index))
+    y=list(newdata.zh.value_counts().sort_index().values)
+    for a,b in zip(x,y):
+        plt.text(a,b+2, b, ha='center', va= 'bottom',fontsize=10) 
+    plt.grid(b=True, which='major', axis='y') 
+    plt.ylabel(u"交易数")
+    plt.title(u"是否含中央供暖(1为含中央供暖)")
+    # 地理环境分布
+    plt.subplot2grid((2,3),(1,0))
+    adr = newdata.adr.value_counts().sort_values()
+    adr.index = ['优','差','中']
+    adr.plot(kind='barh')
+    x=range(len(adr.index))
+    y=list(adr.values)
+    for a,b in zip(x,y):
+        plt.text(b+2,a, b, ha='center', va= 'bottom',fontsize=10)  
+    plt.xticks(rotation=0)
+    plt.xlabel(u"交易数") 
+    plt.title(u'地理位置分布')                        # 设定纵坐标名称
+    plt.grid(b=True, which='major', axis='y') 
+    # 住宅环境分布
+    plt.subplot2grid((2,3),(1,1))
+    wohn = newdata.wohn.value_counts().sort_values()
+    wohn.index = ['差','优','中']
+    wohn.plot(kind='bar')
+    x=range(len(wohn.index))
+    y=list(wohn.values)
+    for a,b in zip(x,y):
+        plt.text(a,b+2, b, ha='center', va= 'bottom',fontsize=10)  
+    plt.xticks(rotation=0)
+    plt.ylabel(u"交易数") 
+    plt.title(u"住宅环境分布")
+    plt.grid(b=True, which='major', axis='y') 
+    
+    # badkach	定性	是否有铺瓷砖的浴室（1有；0无）
+    plt.subplot2grid((2,3),(1,2))
+    badkach = newdata.badkach.value_counts().sort_values()
+    badkach.name = ''
+    badkach.index = list(zip(['无','有'],badkach.values))
+
+    badkach.plot(kind='pie',autopct='%.2f')
+    plt.title('是否有铺瓷砖的浴室')
+    fig.tight_layout()
+    plt.savefig('数据维度初步可视化.png',dpi=100)
+    plt.show()
+    plt.close()
+    
+if __name__ == "__main__":
+    get_dimensionPlot()
+
+#2 属性与房价等级的关联统计
+def get_payment_dim():
+    
+    """属性与房价等级的关联统计"""
+    
+    # 房价等级与是否含中央供暖情况对比
+    get_payment_zh = newdata.groupby(["nmkat","zh"]).size().unstack()
+    get_payment_zh.columns = ['无','有']
+    get_payment_zh.index.names = ['房价等级']
+    get_payment_zh.columns.names = ['是否含中央供暖']
+    get_payment_zh.plot(kind='barh')
+    plt.xticks(rotation = 0)
+    plt.title("房价等级与是否含中央供暖情况对比")
+    plt.xlabel('交易数')
+    plt.grid()
+    plt.savefig("房价等级与是否含中央供暖情况对比.png",dpi=100)
+    plt.show()
+    plt.close()
+    
+    # 房价等级与占地面积对比
+    get_payment_wfl = newdata['wfl'].groupby(newdata["nmkat"]).mean()
+    get_payment_wfl.index.names = ['房价等级']
+    get_payment_wfl.plot(kind='barh')
+    x=range(len(get_payment_wfl.index))
+    y=list(map(lambda x:round(x,2),get_payment_wfl.values))
+    for a,b in zip(x,y):
+        plt.text(b+2, a,b, ha='center', va= 'bottom',fontsize=10)  
+    plt.xlabel(u'平均占地面积')
+    plt.grid()
+    plt.title(u'房价等级与占地面积对比')
+    plt.savefig("房价等级与占地面积对比.png",dpi=100)
+    plt.show()
+    plt.close()
+    
+    
+if __name__ == "__main__":
+    get_payment_dim()    
+
+#3、 各属性与租金密度关系
+
+def get_payment_density():
+    fig = plt.figure(figsize=(10,6))
+    fig.set(alpha=0.2)  # 设定图表颜色alpha参数
+    # 房价类别情况人数分布
+    plt.subplot2grid((3,1),(0,0))             # 在一张大图里分列几个小图
+    #租金等级与房贷年限密度曲线关系
+    newdata.mvdauer[newdata.nmkat == 1].plot(kind='kde')   
+    newdata.mvdauer[newdata.nmkat == 2].plot(kind='kde')
+    newdata.mvdauer[newdata.nmkat == 3].plot(kind='kde')
+    newdata.mvdauer[newdata.nmkat == 4].plot(kind='kde')
+    newdata.mvdauer[newdata.nmkat == 5].plot(kind='kde')
+    plt.xlim(0,100)
+    plt.xlabel(u"租贷年限")# plots an axis lable
+    plt.ylabel(u"密度") 
+    plt.title(u"房价等级与租贷年限密度分布")
+    plt.legend((u'<500', u'500-675',u'675-850',u'850-1150',u'>1150'),loc='best') # sets our legend for our graph.
+    plt.grid(b=True, which='major', axis='y') 
+
+    # 房价等级与占地面积分布
+    plt.subplot2grid((3,1),(1,0))             # 在一张大图里分列几个小图
+    newdata.wfl[newdata.nmkat == 1].plot(kind='kde')   
+    newdata.wfl[newdata.nmkat == 2].plot(kind='kde')
+    newdata.wfl[newdata.nmkat == 3].plot(kind='kde')
+    newdata.wfl[newdata.nmkat == 4].plot(kind='kde')
+    newdata.wfl[newdata.nmkat == 5].plot(kind='kde')
+    plt.xlim(0,200)
+    plt.xlabel(u"占地面积")# plots an axis lable
+    plt.ylabel(u"密度") 
+    plt.title(u"房价等级与占地面积密度分布")
+    plt.legend((u'<500', u'500-675',u'675-850',u'850-1150',u'>1150'),loc='best') # sets our legend for our graph.
+    plt.grid(b=True, which='major', axis='y')   
+    
+    # 房租等级与每平方净租金
+    plt.subplot2grid((3,1),(2,0))             # 在一张大图里分列几个小图
+    newdata.nmqm[newdata.nmkat == 1].plot(kind='kde')   
+    newdata.nmqm[newdata.nmkat == 2].plot(kind='kde')
+    newdata.nmqm[newdata.nmkat == 3].plot(kind='kde')
+    newdata.nmqm[newdata.nmkat == 4].plot(kind='kde')
+    newdata.nmqm[newdata.nmkat == 5].plot(kind='kde')
+    plt.xlim(0,30)
+    plt.xlabel(u"占地面积")# plots an axis lable
+    plt.ylabel(u"密度") 
+    plt.title(u"房价等级与每平方净租金密度分布")
+    plt.legend((u'<500', u'500-675',u'675-850',u'850-1150',u'>1150'),loc='best') # sets our legend for our graph.
+    plt.grid(b=True, which='major', axis='y') 
+    fig.tight_layout()
+    plt.savefig("房价等级与定量变量密度分布.png",dpi=100)
+    plt.show()
+    plt.close()
+
+if __name__ == "__main__":
+    get_payment_density()
+
+
+
+## 分测试集  训练集
+#def get_pca_train_test(data,train_index,test_index):
+#    
+#    data = newdata
+#    from sklearn.decomposition import PCA  
+#    # 特征变量
+#    x_names = ['wfl', 'bad0', 'zh', 'ww0', 'badkach', 'fenster', 'kueche', 'mvdauer','bjkat', 'nmqm', 'rooms', 'adr', 'wohn']
+#    x_data = data.ix[:,x_names]
+#    
+#    # 进行主成分降维度
+#    pca = PCA(n_components=3)  
+#    pca.fit(x_data.as_matrix())  
+#    print(pca.explained_variance_ratio_)  
+#    new_pca = np.array(pd.DataFrame(pca.fit_transform(x_data.as_matrix())))
+#    # 预测分类变量
+#    y_data = np.array(data['nmkat'])
+#    #   提取测试集 训练集 3/7
+#    # PCA
+#    #index = random.sample(list(range(y_data.__len__())),int(y_data.__len__()*0.7))
+#    
+#    x_train_pca = new_pca[train_index]
+#    x_test_pca = new_pca[test_index]
+#    y_train_pca = y_data[train_index]
+#    y_test_pca = y_data[test_index]
+#    
+#    # 普通处理
+#    x_train = x_data[train_index]
+#    x_test = x_data[test_index]
+#    y_train = y_data[train_index]
+#    y_test = y_data[test_index]
+#    
+#    return(x_train,x_test,y_train,y_test,x_train_pca,x_test_pca,y_train_pca,y_test_pca)
+
+
+#if __name__ =="__main__":
+#    x_train,x_test,y_train,y_test,x_train_pca,x_test_pca,y_train_pca,y_test_pca = get_pca_train_test(newdata)
+
+#features_train = x_train
+#labels_train = y_train
+#features_test = x_test
+#labels_test = y_test
+
+# 模型类
+class ML_model(object):
+    
+    # 实例属性初始化
+    def __init__(self,columns,features_train, labels_train,features_test,labels_test):
+        
+        self.features_train =  features_train
+        self.labels_train = labels_train
+        self.features_test =features_test
+        self.labels_test = labels_test
+        self.columns = columns
+
+    ### 朴素贝叶斯模型
+    def NB_Accuracy(self):
+        
+        features_train = self.features_train 
+        labels_train = self.labels_train 
+        features_test = self.features_test 
+        labels_test = self.labels_test 
+        
+        """ 计算分类器的准确率""" 
+        ### 导入sklearn模块的GaussianNB 
+        from sklearn.naive_bayes import GaussianNB 
+        from sklearn.metrics import roc_curve  
+        from sklearn.metrics import auc  
+        from sklearn.metrics import classification_report,accuracy_score,confusion_matrix
+          
+        ### 创建分类器 
+        clf = GaussianNB() 
+          
+        ### 训练分类器 
+        X=features_train 
+        Y=labels_train 
+        clf.fit(X,Y) 
+          
+        ### 用训练好的分类器去预测测试集的标签值 
+        pred =clf.predict(features_test) 
+          
+        ### 计算并返回在测试集上的准确率 
+        from sklearn.metrics import accuracy_score 
+        y_pred =pred 
+        y_true =labels_test
+        
+        score = "%.4f"%accuracy_score(y_true, y_pred) 
+        #print('accuracy_score: {}'.format(score))
+        confusion_matrix = metrics.confusion_matrix(y_true, y_pred,labels = list(set(y_true)))
+        confusion_matrix = pd.DataFrame(confusion_matrix,columns = list(set(y_true)),index=list(set(y_true)))
+
+        #print(classification_report(y_true,y_pred))
+        #print()
+        #print('混淆矩阵:')
+        #print(confusion_matrix)
+        return(y_pred,score)
+        
+   
+    ### knn k近邻
+    def knn_model(self):
+        
+        from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.metrics import roc_curve  
+        from sklearn.metrics import auc  
+        from sklearn.metrics import classification_report,accuracy_score,confusion_matrix
+        
+        features_train = self.features_train 
+        labels_train = self.labels_train 
+        features_test = self.features_test 
+        labels_test = self.labels_test 
+        
+        # 选择最优k值
+        error_list = []
+        for k in range(2,20):
+            model = KNeighborsClassifier(n_neighbors = k)
+            # 训练集训练模型
+            model.fit(features_train, labels_train)
+            
+            ### 用训练好的分类器去预测测试集的标签值 
+            pred =model.predict(features_test) 
+              
+            ### 计算并返回在测试集上的准确率 
+            from sklearn.metrics import accuracy_score 
+            y_pred =pred 
+            y_true =labels_test
+            error = 1 - accuracy_score(y_true, y_pred)
+            error_list.append(float("%.3f"%error))
+        
+        # 对K值及错误率可视化
+        error_min = min(error_list)
+        k_value = error_list.index(error_min)
+        plt.plot(list(range(len(error_list))),error_list)
+        plt.grid()
+        plt.xlabel('K值')
+        plt.ylabel('测试集错误率')
+        #设置坐标轴刻度 及标签
+        my_x_ticks = np.arange(2, 20, 1)
+        plt.xticks(range(len(error_list)),my_x_ticks)
+        plt.grid()
+        plt.text(k_value,error_min,"({},{})".format(range(2,20)[k_value],error_min))
+        plt.title('K值与测试集错误率关系') 
+        plt.savefig('K值与测试集错误率关系.png',dpi=100)
+        plt.close()
+        
+        # 寻找最优的K值
+        model = KNeighborsClassifier(n_neighbors = range(2,20)[k_value])
+        # 训练集训练模型
+        model.fit(features_train, labels_train)
+        
+        ### 用训练好的分类器去预测测试集的标签值 
+        pred =model.predict(features_test) 
+          
+        ### 计算并返回在测试集上的准确率 
+        from sklearn.metrics import accuracy_score 
+        y_pred =pred 
+        y_true =labels_test
+        
+        score = "%.4f"%accuracy_score(y_true, y_pred) 
+        #print('accuracy_score: {}'.format(score))
+        confusion_matrix = metrics.confusion_matrix(y_true, y_pred,labels = list(set(y_true)))
+        confusion_matrix = pd.DataFrame(confusion_matrix,columns = list(set(y_true)),index=list(set(y_true)))
+
+        #print(classification_report(y_true,y_pred))
+        #print()
+        #print('混淆矩阵:')
+        #print(confusion_matrix)
+        return(y_pred,score)
+
+    
+    ### 决策树
+    def tree_model(self):
+        
+        from sklearn import tree
+        from sklearn.metrics import roc_curve  
+        from sklearn.metrics import auc  
+        from sklearn.metrics import classification_report,accuracy_score,confusion_matrix
+        from sklearn.tree import DecisionTreeClassifier
+        from sklearn.grid_search import GridSearchCV
+        from sklearn.model_selection import StratifiedKFold
+        
+        features_train = self.features_train 
+        labels_train = self.labels_train 
+        features_test = self.features_test 
+        labels_test = self.labels_test 
+        
+        ### 选择最优参数 ####
+        model = tree.DecisionTreeClassifier()
+
+        features_n = features_train.shape[1]
+        parameter_grid = {'max_depth':list(range(1,features_n+2)),'max_features':list(range(1,features_n+1))}
+        
+        #将不同参数带入
+        gridsearch = GridSearchCV(model,param_grid = parameter_grid)
+         # 训练集训练模型
+        gridsearch.fit(features_train, labels_train)
+        
+        # 最优参数
+        best_param = gridsearch.best_params_
+        #
+        best_decision_tree_classifier = DecisionTreeClassifier(
+                max_depth=best_param['max_depth'],
+                 max_features=best_param['max_features'])
+        
+        best_decision_tree_classifier.fit(features_train, labels_train)
+        
+        # 属性的重要程度
+        feature_values = best_decision_tree_classifier.feature_importances_.tolist()
+        fearure_name = self.columns
+        
+        # 重要属性可视化
+        if fearure_name.__len__()>5:
+            feature_df = pd.Series(feature_values,index = fearure_name).sort_values(ascending=False)
+            feature_df.plot(kind = 'bar')
+            plt.xticks(rotation = 25)
+            plt.grid()
+            x=range(len(feature_df.index))
+            y=list(map(lambda x:float("%.3f"% x),feature_df.values))
+            for a,b in zip(x,y):
+                plt.text(a, b+0.01,b, ha='center', va= 'bottom',fontsize=10)  
+            plt.xlabel('特征名称')
+            plt.ylabel('权重')
+            plt.grid()
+            plt.title(u'特征重要程度排名')
+            plt.savefig(u'特征重要程度排名.png',dpi=150)
+            plt.close()
+        
+        ### 用训练好的分类器去预测测试集的标签值 
+        pred =best_decision_tree_classifier.predict(features_test) 
+          
+        ### 计算并返回在测试集上的准确率 
+        from sklearn.metrics import accuracy_score 
+        y_pred =pred 
+        y_true =labels_test
+        
+        score = "%.4f"%accuracy_score(y_true, y_pred) 
+        #print('accuracy_score: {}'.format(score))
+        confusion_matrix = metrics.confusion_matrix(y_true, y_pred,labels = list(set(y_true)))
+        confusion_matrix = pd.DataFrame(confusion_matrix,columns = list(set(y_true)),index=list(set(y_true)))
+
+        #print(classification_report(y_true,y_pred))
+        #print()
+        #print('混淆矩阵:')
+        #print(confusion_matrix)
+        return(y_pred,score)
+
+
+
+
+# 加权投票法
+def WeightedVote(score_nb,score_knn,score_tree,y_pred_nb,y_pred_knn,y_pred_tree,y_test):
+
+    all_weight = float(score_nb)+float(score_knn)+float(score_tree)
+    # 计算各分类器权重
+    weight_nb = round(float(score_nb)/all_weight,3)
+    weight_knn = round(float(score_knn)/all_weight,3)
+    weight_tree = round(float(score_tree)/all_weight,3)
+    
+    weightVote_label = []
+    for n in range(y_pred_nb.__len__()):
+        """基于knn,svm,nb分类器建立加权投票法"""
+        label_x=(y_pred_nb[n],y_pred_knn[n],y_pred_tree[n])
+        weight_x = (weight_nb,weight_knn,weight_tree)
+        weight_sum = {}
+        for i in range(len(weight_x)):
+            if label_x[i] not in weight_sum:
+                weight_sum[label_x[i]] = weight_x[i]
+            else:
+                weight_sum[label_x[i]] = weight_sum[label_x[i]]+weight_x[i]
+        weight_rank=sorted(weight_sum.items(),key = lambda x:x[1],reverse=True)
+        label_weight_vote = weight_rank[0][0]
+        weightVote_label.append(label_weight_vote)
+     ### 计算并返回在测试集上的准确率 
+    from sklearn.metrics import classification_report,accuracy_score,confusion_matrix
+
+    score = "%.4f"%accuracy_score(y_test, weightVote_label) 
+    print('accuracy_score: {}'.format(score))
+    confusion_matrix = metrics.confusion_matrix(y_test, weightVote_label,labels = list(set(y_test)))
+    print(classification_report(y_test,weightVote_label))
+    print()
+    print('混淆矩阵:')
+    print(confusion_matrix)
+    
+
+
+# 基于 bagging 基模型为tree knn
+def bagging_tree_knn(n,x_train,y_train,x_test,y_test):
+    import random
+    from sklearn import tree
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.metrics import roc_curve  
+    from sklearn.metrics import auc  
+    from sklearn.metrics import classification_report,accuracy_score,confusion_matrix
+    from sklearn.grid_search import GridSearchCV
+
+    # 存放基分类模型
+    model_list = []
+    # 存放基分类精确度
+    score_list = []
+    # 存放最优基分类
+    arboles_list = []
+    
+    # 通过训练基分类器选择最优基分类器
+    for i in range(n):
+        # 合并训练集特征数据与标签数据
+        trainData = list(zip(x_train,y_train))
+        
+        # boostrap 有放回抽样
+        train_x_data = random.sample(trainData,trainData.__len__())
+        
+        # 自助训练数据集
+        x_trainfeature = list(map(lambda x:x[0],train_x_data))
+        x_trainlabel = list(map(lambda x:x[1],train_x_data))
+        
+        # knn基分类器
+        # 选择最优k值
+        error_list = []
+        for k in range(2,20):
+            model = KNeighborsClassifier(n_neighbors = k)
+            # 训练集训练模型
+            model.fit(x_trainfeature, x_trainlabel)
+            
+            ### 用训练好的分类器去预测测试集的标签值 
+            pred =model.predict(x_trainfeature) 
+              
+            ### 计算并返回在测试集上的准确率 
+            from sklearn.metrics import accuracy_score 
+            y_pred =pred 
+            y_true =x_trainlabel
+            error = 1 - accuracy_score(y_true, y_pred)
+            error_list.append(float("%.3f"%error))
+        
+        # 对K值及错误率可视化
+        error_min = min(error_list)
+        k_value = error_list.index(error_min)
+               
+        # 寻找最优的K值
+        model_knn = KNeighborsClassifier(n_neighbors = range(2,20)[k_value])
+        model_knn.fit(x_trainfeature, x_trainlabel)
+        #print(model_knn)
+        pred_knn =model_knn.predict(x_test) 
+        score_knn = "%.4f"%accuracy_score(y_test, pred_knn) 
+        
+        # tree基分类器
+        model_tree =  tree.DecisionTreeClassifier()
+        ### 选择最优参数 ####
+        features_n = x_trainfeature[0].__len__()
+        parameter_grid = {'max_depth':list(range(1,features_n+2)),'max_features':list(range(1,features_n+1))}
+        
+        #将不同参数带入
+        gridsearch = GridSearchCV(model_tree,param_grid = parameter_grid)
+         # 训练集训练模型
+        gridsearch.fit(x_trainfeature, x_trainlabel)
+        
+        # 最优参数
+        best_param = gridsearch.best_params_
+        #
+        best_decision_tree_classifier = tree.DecisionTreeClassifier(
+                max_depth=best_param['max_depth'],
+                 max_features=best_param['max_features'])
+        model_tree.fit(x_trainfeature, x_trainlabel) 
+        pred_tree =model_tree.predict(x_test) 
+        score_tree = "%.4f"%accuracy_score(y_test, pred_tree) 
+        
+        # 通过预测精确度寻找最优基分类
+        if float(score_tree)>float(score_knn):
+            score_list.append(float(score_tree))
+            arboles_list.append("Tree")
+            model_list.append(model_tree)
+        else:
+            score_list.append(float(score_knn))
+            arboles_list.append("KNN")
+            model_list.append(model_knn)
+    
+    # 基于最优分类器训练测试集
+    # 存放各基分类预测的类别，使用投票法进行最后分类
+    pred_x_list = []
+    for i in range(arboles_list.__len__()):
+        if arboles_list[i] == "Tree":
+            x_tree = model_list[i]
+            pred_x =x_tree.predict(x_test)  
+            pred_x_list.append(pred_x)
+        else:
+            x_knn = model_list[i]
+            pred_x =x_knn.predict(x_test)
+            pred_x_list.append(pred_x)
+    # 投票数据
+    voteData=pd.DataFrame(pred_x_list).T
+    # 存放投票法筛选出来的类别
+    votelabel_list = []
+    for i in range(voteData.shape[0]):
+        Votelabel=sorted(Counter(voteData.ix[i,:]).items(),key = lambda x:x[1],reverse=True)
+        votelabel_list.append(Votelabel[0][0])
+        
+    score = "%.4f"%accuracy_score(y_test, votelabel_list) 
+    #print(arboles_list)
+    print('accuracy_score: {}'.format(score))
+    confusion_matrix = metrics.confusion_matrix(y_test, votelabel_list,labels = list(set(y_test)))
+    confusion_matrix = pd.DataFrame(confusion_matrix,columns = list(set(y_test)),index=list(set(y_test)))
+    print(classification_report(y_test,votelabel_list))
+    print()
+    print('混淆矩阵:')
+    print(confusion_matrix)
+    return(voteData,arboles_list,score_list)
+
+        
+def KFold_result(data):
+    
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.decomposition import PCA  
+
+    # 特征变量
+    x_names = ['wfl', 'bad0', 'zh', 'ww0', 'badkach', 'fenster', 'kueche', 'mvdauer','bjkat', 'nmqm', 'rooms', 'adr', 'wohn']
+    x_data = np.array(data.ix[:,x_names])
+    
+    # 进行主成分降维度
+    pca = PCA(n_components=3)  
+    pca.fit(x_data)  
+    print(pca.explained_variance_ratio_)  
+    new_pca = np.array(pd.DataFrame(pca.fit_transform(x_data)))
+    # 预测分类变量
+    y_data = np.array(data['nmkat'])
+    
+    #   提取测试集 训练集  训练集 10折交叉验证
+    
+    # 存储各个交叉验证数据结果
+    y_pred_nb_list = []
+    score_nb_list = []
+    y_pred_knn_list = []
+    score_knn_list = []
+    y_pred_tree_list = []
+    score_tree_list = []
+    
+    y_pred_nb_pca_list = []
+    score_nb_pca_list = []
+    y_pred_knn_pca_list = []
+    score_knn_pca_list = []
+    y_pred_tree_pca_list = []
+    score_tree_pca_list = []
+
+    skf = StratifiedKFold(n_splits=10)
+    for train_index, test_index in skf.split(x_data, y_data):  
+        
+        # PCA
+        x_train_pca = new_pca[train_index]
+        x_test_pca = new_pca[test_index]
+        y_train_pca = y_data[train_index]
+        y_test_pca = y_data[test_index]
+        
+        # 普通处理
+        x_train = x_data[train_index]
+        x_test = x_data[test_index]
+        y_train = y_data[train_index]
+        y_test = y_data[test_index]
+    
+
+        # 模型类 普通数据
+        modelObj = ML_model(x_names,x_train, y_train,x_test,y_test)
+        #print('-------{}-------'.format('贝叶斯'))
+        y_pred_nb_x,score_nb_x= modelObj.NB_Accuracy()
+        #print('-------{}-------'.format('K近邻'))
+        y_pred_knn_x,score_knn_x = modelObj.knn_model()
+        #print('-------{}-------'.format('决策树'))
+        y_pred_tree_x,score_tree_x = modelObj.tree_model()
+    
+        # PCA数据
+        modelObj_pca = ML_model(['P1','P2','P3'],x_train_pca,y_train_pca,x_test_pca,y_test)
+        #print('-------{}-------'.format('贝叶斯(PCA)'))
+        y_pred_nb_pca_x,score_nb_pca_x= modelObj_pca.NB_Accuracy()
+        #print('-------{}-------'.format('K近邻(PCA)'))
+        y_pred_knn_pca_x,score_knn_pca_x = modelObj_pca.knn_model()
+        #print('-------{}-------'.format('决策树(PCA)'))
+        y_pred_tree_pca_x,score_tree_pca_x = modelObj_pca.tree_model()
+        
+        # 记录数据
+        y_pred_nb_list.append(y_pred_nb_x);
+        score_nb_list.append(float(score_nb_x));
+        y_pred_knn_list.append(y_pred_knn_x);
+        score_knn_list.append(float(score_knn_x));
+        y_pred_tree_list.append(y_pred_tree_x);
+        score_tree_list.append(float(score_tree_x));
+        
+        y_pred_nb_pca_list.append(y_pred_nb_pca_x);
+        score_nb_pca_list.append(float(score_nb_pca_x));
+        y_pred_knn_pca_list.append(y_pred_knn_pca_x);
+        score_knn_pca_list.append(float(score_knn_pca_x));
+        y_pred_tree_pca_list.append(y_pred_tree_pca_x);
+        score_tree_pca_list.append(float(score_tree_pca_x));
+        
+        # 计算交叉验证之后的精确度
+        score_nb = np.mean(score_nb_list);
+        score_knn = np.mean(score_knn_list);
+        score_tree = np.mean(score_tree_list);
+        
+        score_nb_pca = np.mean(score_nb_pca_list);
+        score_knn_pca = np.mean(score_knn_pca_list);
+        score_tree_pca = np.mean(score_tree_pca_list);
+        
+    return(x_train, y_train,x_test,y_test,x_train_pca,y_train_pca,x_test_pca,score_nb,score_knn,score_tree,score_nb_pca,score_knn_pca,score_tree_pca,y_pred_nb_x,y_pred_knn_x,y_pred_tree_x,y_pred_nb_pca_x,y_pred_knn_pca_x,y_pred_tree_pca_x)
+        
+            
+        
+
+
+
+
+
+if __name__=="__main__":
+    x_train, y_train,x_test,y_test,x_train_pca,y_train_pca,x_test_pca,score_nb,score_knn,score_tree,score_nb_pca,score_knn_pca,score_tree_pca,y_pred_nb,y_pred_knn,y_pred_tree,y_pred_nb_pca,y_pred_knn_pca,y_pred_tree_pca = KFold_result(newdata)
+    # 普通数据处理
+    print('-------{}-------'.format('贝叶斯'))
+    print("accuracy_score:",score_nb)
+    print('-------{}-------'.format('K近邻'))
+    print("accuracy_score:",score_knn)
+    print('-------{}-------'.format('决策树'))
+    print("accuracy_score:",score_tree)    
+    print('-------{}-------'.format('加权投票法'))
+    WeightedVote(score_nb,score_knn,score_tree,y_pred_nb,y_pred_knn,y_pred_tree,y_test)
+    print('-------{}-------'.format('bagging改进'))
+    voteData ,arboles_list,score_list = bagging_tree_knn(10,x_train, y_train,x_test,y_test)
+
+    # PCA处理
+    print('-------{}-------'.format('贝叶斯(PCA)'))
+    print("accuracy_score:",score_nb_pca)   
+    print('-------{}-------'.format('K近邻(PCA)'))
+    print("accuracy_score:",score_knn_pca)       
+    print('-------{}-------'.format('决策树(PCA)'))
+    print("accuracy_score:",score_tree_pca)           
+    print('-------{}-------'.format('加权投票法(PCA)'))
+    WeightedVote( score_nb_pca,score_knn_pca,score_tree_pca,y_pred_nb_pca,y_pred_knn_pca,y_pred_tree_pca,y_test)
+    print('-------{}-------'.format('bagging改进(PCA)'))
+    voteData_pca ,arboles_list_pca,score_list_pca = bagging_tree_knn(10,x_train_pca,y_train_pca,x_test_pca,y_test)
+    
+    
+
